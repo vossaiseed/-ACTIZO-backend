@@ -11,9 +11,27 @@ import routes from './routes/index.js'
 
 const app = express()
 
+// CORS — tolerant of trailing slashes + comma-separated multiple origins.
+// (A trailing slash in CORS_ORIGIN is the classic "data not showing in prod" bug:
+//  browsers send Origin with no trailing slash, so an exact-string match fails.)
+const stripSlash = (s) => String(s || '').trim().replace(/\/+$/, '')
+const allowedOrigins = stripSlash(env.corsOrigin) === '*'
+  ? ['*']
+  : env.corsOrigin.split(',').map(stripSlash).filter(Boolean)
+const corsOptions = {
+  origin(origin, cb) {
+    // Allow non-browser clients (no Origin), wildcard, or a normalized match.
+    if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(stripSlash(origin))) {
+      return cb(null, true)
+    }
+    return cb(null, false)
+  },
+  credentials: true,
+}
+
 // Security & parsing
 app.use(helmet())
-app.use(cors({ origin: env.corsOrigin, credentials: true }))
+app.use(cors(corsOptions))
 app.use(express.json({ limit: '1mb' }))
 app.use(express.urlencoded({ extended: true }))
 app.use(compression())
