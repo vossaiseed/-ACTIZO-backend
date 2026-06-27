@@ -1,7 +1,6 @@
 import { supabase } from '../config/supabase.js'
 import * as leadModel from '../models/lead.model.js'
 import * as branchModel from '../models/branch.model.js'
-import * as financeModel from '../models/finance.model.js'
 import * as followupModel from '../models/followup.model.js'
 import * as targetModel from '../models/target.model.js'
 
@@ -24,9 +23,8 @@ export async function overview(scope = {}) {
   const leadCounts = leadRows.reduce((acc, r) => ((acc[r.status] = (acc[r.status] || 0) + 1), acc), {})
   const totalLeads = leadRows.length
 
-  const [branchRes, months, upcomingAll] = await Promise.all([
+  const [branchRes, upcomingAll] = await Promise.all([
     branchModel.findAll({ from: 0, to: 99 }),
-    financeModel.monthly(),
     followupModel.upcoming(branchId || staffId ? 100 : 6),
   ])
   const allBranches = branchRes.data || []
@@ -73,6 +71,20 @@ export async function overview(scope = {}) {
   const totalRevenue = completed.reduce((s, r) => s + Number(r.amount || 0), 0)
   const monthPrefix = new Date().toISOString().slice(0, 7)
   const monthlyRevenue = completed.filter((r) => String(r.date || '').startsWith(monthPrefix)).reduce((s, r) => s + Number(r.amount || 0), 0)
+
+  // Real last-8-months revenue trend from actual completed sales (no seeded data).
+  const revByMonth = {}
+  for (const r of completed) {
+    const k = String(r.date || '').slice(0, 7)
+    if (k) revByMonth[k] = (revByMonth[k] || 0) + Number(r.amount || 0)
+  }
+  const trendNow = new Date()
+  const revenueTrendData = []
+  for (let i = 7; i >= 0; i -= 1) {
+    const d = new Date(trendNow.getFullYear(), trendNow.getMonth() - i, 1)
+    const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    revenueTrendData.push({ month: d.toLocaleString('en-US', { month: 'short' }), revenue: revByMonth[k] || 0, target: 0 })
+  }
 
   // Live per-branch metrics (replaces the seeded monthly_* / target_achievement columns).
   const branchStats = await branchModel.bulkStats(branches.map((b) => b.id))
@@ -135,7 +147,7 @@ export async function overview(scope = {}) {
           accent: b.accent,
         }
       }),
-      revenueTrend: months.map((m) => ({ month: m.month, revenue: m.revenue, target: Math.round(Number(m.revenue || 0) * 0.95) })),
+      revenueTrend: revenueTrendData,
     },
     recentLeads: recentLeadsRes.data || [],
     recentActivities: activitiesRes.data || [],

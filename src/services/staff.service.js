@@ -8,7 +8,9 @@
  */
 import { supabase } from '../config/supabase.js'
 import * as userModel from '../models/user.model.js'
+import * as leadModel from '../models/lead.model.js'
 import * as userService from './user.service.js'
+import * as incentiveService from './incentive.service.js'
 import { ApiError } from '../utils/ApiError.js'
 import { parseListQuery, buildMeta } from '../utils/pagination.js'
 
@@ -21,16 +23,16 @@ async function branchMap() {
   return Object.fromEntries((data || []).map((b) => [b.id, b.name]))
 }
 
-/** Aggregate leads/sales/incentives per staff id in three bulk queries. */
+/** Aggregate leads + completed-sales revenue per staff id. Incentives are overlaid
+ *  separately from the live incentive engine (single source of truth). */
 async function buildMetrics(staffIds) {
   if (!staffIds.length) return {}
-  const [leadsRes, salesRes, incRes] = await Promise.all([
+  const [leadsRes, salesRes] = await Promise.all([
     supabase.from('leads').select('staff_id, status').in('staff_id', staffIds),
     supabase.from('sales').select('staff_id, final_amount, amount, status').in('staff_id', staffIds),
-    supabase.from('incentives').select('staff_id, total').in('staff_id', staffIds),
   ])
   const m = {}
-  staffIds.forEach((id) => (m[id] = { assignedLeads: 0, wonLeads: 0, revenue: 0, incentiveEarned: 0 }))
+  staffIds.forEach((id) => (m[id] = { assignedLeads: 0, wonLeads: 0, revenue: 0 }))
   for (const l of leadsRes.data || []) {
     const e = m[l.staff_id]
     if (!e) continue
@@ -41,10 +43,6 @@ async function buildMetrics(staffIds) {
     const e = m[s.staff_id]
     if (!e || s.status === 'Refunded') continue
     e.revenue += num(s.final_amount ?? s.amount)
-  }
-  for (const i of incRes.data || []) {
-    const e = m[i.staff_id]
-    if (e) e.incentiveEarned += num(i.total)
   }
   return m
 }
@@ -93,16 +91,57 @@ export async function list(query, scope = {}) {
     to: q.to,
   })
   const ids = (data || []).map((u) => u.id)
-  const [metrics, branches] = await Promise.all([buildMetrics(ids), branchMap()])
-  const staff = (data || []).map((u) => shape(u, metrics[u.id], branches[u.branch_id]))
+  const [metrics, branches, incentiveData] = await Promise.all([
+    buildMetrics(ids),
+    branchMap(),
+    incentiveService.earned(scope), // live incentives, same scope as the list
+  ])
+  const incByStaff = Object.fromEntries((incentiveData.items || []).map((i) => [i.staffId, i.amount]))
+  const staff = (data || []).map((u) => ({
+    ...shape(u, metrics[u.id], branches[u.branch_id]),
+    incentiveEarned: incByStaff[u.id] || 0,
+  }))
   return { data: staff, meta: buildMeta({ page: q.page, limit: q.limit, total: count }) }
 }
 
 export async function getById(id) {
   const u = await userModel.findPublicById(id)
   if (!u) throw ApiError.notFound('Staff member not found')
-  const [metrics, branches] = await Promise.all([buildMetrics([id]), branchMap()])
-  return shape(u, metrics[id], branches[u.branch_id])
+  // Pull the staff's real related collections so the profile tables aren't empty:
+  // their leads, and their live-computed incentive breakdown (same engine as the
+  // Incentives page — keeps every staff metric on the SAME staff id).
+  const [metrics, branches, leadsRes, incentiveData] = await Promise.all([
+    buildMetrics([id]),
+    branchMap(),
+    leadModel.findAll({ staffId: id, from: 0, to: 499 }),
+    incentiveService.earned({ branchId: u.branch_id, staffId: id }),
+  ])
+  const assignedLeadsList = (leadsRes.data || []).map((l) => ({
+    id: l.ref_code || l.id,
+    name: l.name,
+    company: l.company || '',
+    product: l.product?.name || '',
+    status: l.status,
+    value: Number(l.value ?? l.amount ?? 0),
+    createdDate: l.created_at,
+    lastActivity: l.updated_at || l.created_at,
+  }))
+  const incentives = (incentiveData.breakdown || []).map((b) => ({
+    id: b.id,
+    product: b.productName,
+    targetQty: b.targetQty,
+    achievedQty: b.achievedQty,
+    extraQty: b.extraQty,
+    rate: b.rate,
+    amount: b.amount,
+    status: b.status,
+  }))
+  return {
+    ...shape(u, metrics[id], branches[u.branch_id]),
+    incentiveEarned: incentiveData.summary.totalIncentives,
+    assignedLeadsList,
+    incentives,
+  }
 }
 
 export async function create(payload, actor = {}) {

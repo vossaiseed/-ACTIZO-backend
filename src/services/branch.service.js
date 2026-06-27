@@ -1,6 +1,8 @@
 import { supabase } from '../config/supabase.js'
 import * as branchModel from '../models/branch.model.js'
 import * as targetModel from '../models/target.model.js'
+import * as staffService from './staff.service.js'
+import { withAchievement } from './target.service.js'
 import { ApiError } from '../utils/ApiError.js'
 import { parseListQuery, buildMeta } from '../utils/pagination.js'
 
@@ -62,13 +64,32 @@ export async function list(query, scope = {}) {
 export async function getById(id) {
   const branch = await branchModel.findById(id)
   if (!branch) throw ApiError.notFound('Branch not found')
-  const [stats, sales, units] = await Promise.all([
+  const [stats, sales, units, staffRes, targetRows, achSales] = await Promise.all([
     branchModel.stats(id),
     branchModel.completedSales(id),
     unitProgress([id]),
+    staffService.list({}, { branchId: id }), // real staff of this branch
+    targetModel.findGeneral({ scope: 'Branch', branchId: id }), // this branch's targets
+    targetModel.completedSalesForAchievement(),
   ])
   const targetUnits = units.target[id] || 0
   const soldUnits = units.sold[id] || 0
+
+  // Branch's targets with LIVE achievement (same engine as the Targets page).
+  const targets = (targetRows || []).map((t) => {
+    const a = withAchievement(t, achSales)
+    return {
+      id: t.id,
+      product: t.product?.name || '—',
+      unit: t.product?.unit || 'units',
+      scope: t.scope,
+      period: t.period || 'Monthly',
+      status: a.status,
+      targetQty: Number(t.target_qty || 0),
+      achievedQty: a.achieved_qty,
+      completion: a.completion,
+    }
+  })
 
   // Live monthly revenue + last-8-months trend from actual completed sales.
   const byMonth = {}
@@ -96,8 +117,11 @@ export async function getById(id) {
     staff_count: stats.staffCount,
     total_leads: stats.totalLeads,
     total_sales: stats.totalSales,
+    won_leads: stats.wonLeads,
     monthly_revenue: byMonth[currentKey] || 0,
     revenue_trend: revenueTrend,
+    staff: staffRes.data || [], // real branch staff (Branch Staff section)
+    targets, // this branch's targets with live achievement (Branch Targets section)
   }
 }
 

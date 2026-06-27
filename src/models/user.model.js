@@ -48,6 +48,13 @@ export async function findActiveByRole(role) {
   return data || []
 }
 
+/** Users that currently hold a given plaintext PIN — used to enforce PIN uniqueness. */
+export async function findByPin(pin) {
+  const { data, error } = await supabase.from(TABLE).select('id, name, role, status').eq('pin', pin)
+  if (error) throw error
+  return data || []
+}
+
 export async function create(payload) {
   const { data, error } = await supabase.from(TABLE).insert(payload).select(PUBLIC).single()
   if (error) throw error

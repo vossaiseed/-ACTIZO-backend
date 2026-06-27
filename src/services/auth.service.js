@@ -1,3 +1,4 @@
+import { supabase } from '../config/supabase.js'
 import * as userModel from '../models/user.model.js'
 import { verifyPin } from '../utils/pin.js'
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/jwt.js'
@@ -13,6 +14,17 @@ const toSession = (u) => ({
   avatarColor: u.avatar_color,
   permissions: ROLE_PERMISSIONS[u.role] || [],
 })
+
+/** Resolve the assigned branch name so the UI shows the real branch (not a placeholder). */
+async function withBranchName(session) {
+  if (session.branchId) {
+    const { data } = await supabase.from('branches').select('name').eq('id', session.branchId).maybeSingle()
+    session.branchName = data?.name || null
+  } else {
+    session.branchName = null
+  }
+  return session
+}
 
 /**
  * Role + 6-digit PIN login (mirrors the frontend). Optionally an identifier
@@ -42,7 +54,7 @@ export async function login({ role, pin, identifier }) {
   if (candidate.status !== 'active') throw ApiError.forbidden('Account is inactive')
 
   await userModel.touchLastLogin(candidate.id)
-  const session = toSession(candidate)
+  const session = await withBranchName(toSession(candidate))
   return {
     user: session,
     accessToken: signAccessToken({ sub: candidate.id, role: candidate.role }),
@@ -53,7 +65,7 @@ export async function login({ role, pin, identifier }) {
 export async function getProfile(userId) {
   const user = await userModel.findPublicById(userId)
   if (!user) throw ApiError.notFound('User not found')
-  return { ...toSession(user), ...user }
+  return withBranchName({ ...user, ...toSession(user) })
 }
 
 export async function refresh(refreshToken) {

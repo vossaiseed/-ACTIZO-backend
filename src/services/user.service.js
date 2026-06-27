@@ -25,6 +25,30 @@ export async function getById(id) {
   return user
 }
 
+/**
+ * Guarantee a PIN is unique across users so role+PIN login always resolves to ONE
+ * account. If `provided` is given, reject collisions; otherwise generate a fresh
+ * unique PIN. (Inactive accounts are ignored — they can't log in.)
+ */
+async function ensureUniquePin(provided, exceptId = null) {
+  const clashes = async (pin) => {
+    const matches = await userModel.findByPin(pin)
+    return matches.some((u) => u.id !== exceptId && u.status === 'active')
+  }
+  if (provided) {
+    if (await clashes(provided)) {
+      throw ApiError.badRequest(`PIN ${provided} is already in use. Please choose a different 6-digit PIN.`)
+    }
+    return provided
+  }
+  for (let i = 0; i < 25; i += 1) {
+    const pin = generatePin()
+    // eslint-disable-next-line no-await-in-loop
+    if (!(await clashes(pin))) return pin
+  }
+  throw ApiError.badRequest('Could not allocate a unique PIN. Please try again.')
+}
+
 export async function create(payload, actor = {}) {
   const role = payload.role || 'staff'
   if (![ROLES.STAFF, ROLES.BRANCH_MANAGER, ROLES.ADMIN].includes(role)) {
@@ -37,7 +61,7 @@ export async function create(payload, actor = {}) {
   const branchId =
     actor.role === ROLES.BRANCH_MANAGER ? actor.branchId : payload.branchId || null
 
-  const pin = payload.pin || generatePin()
+  const pin = await ensureUniquePin(payload.pin) // unique, or generate a unique one
   const pin_hash = await hashPin(pin)
 
   const created = await userModel.create({
@@ -64,8 +88,9 @@ export async function update(id, payload) {
   }
   for (const [k, col] of Object.entries(map)) if (payload[k] !== undefined) fields[col] = payload[k]
   if (payload.pin) {
-    fields.pin_hash = await hashPin(payload.pin)
-    fields.pin = payload.pin
+    const pin = await ensureUniquePin(payload.pin, id)
+    fields.pin_hash = await hashPin(pin)
+    fields.pin = pin
   }
   return userModel.update(id, fields)
 }
@@ -78,7 +103,7 @@ export async function setStatus(id, status) {
 
 export async function resetPin(id) {
   await getById(id)
-  const pin = generatePin()
+  const pin = await ensureUniquePin(null, id) // fresh, guaranteed-unique PIN
   await userModel.update(id, { pin_hash: await hashPin(pin), pin })
   return { pin }
 }

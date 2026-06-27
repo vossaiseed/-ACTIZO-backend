@@ -18,11 +18,16 @@ export const getOne = asyncHandler(async (req, res) => {
 })
 
 export const create = asyncHandler(async (req, res) => {
-  // Staff record sales against themselves by default.
   const payload = { ...req.body }
   if (req.user?.role === ROLES.STAFF) {
-    payload.staffId = payload.staffId || req.user.id
-    payload.branchId = payload.branchId || req.user.branchId
+    // A staff member can ONLY record sales against themselves. Never trust a
+    // client-supplied staffId/branchId — always bind to the authenticated user
+    // so the sale (and its incentive/achievement) is linked to the real owner.
+    payload.staffId = req.user.id
+    payload.branchId = req.user.branchId
+  } else if (req.user?.role === ROLES.BRANCH_MANAGER) {
+    // Managers record sales only within their own branch.
+    payload.branchId = req.user.branchId
   }
   sendCreated(res, await saleService.create(payload), 'Sale recorded')
 })

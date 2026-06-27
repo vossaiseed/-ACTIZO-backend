@@ -75,6 +75,8 @@ export async function create(payload) {
   }
 
   await notificationService.emit({
+    branchId: sale.branch_id,
+    staffId: sale.staff_id,
     type: 'sale',
     title: 'New sale recorded',
     message: `${payload.customer} — ₹${finalAmount.toLocaleString('en-IN')}`,
@@ -103,6 +105,15 @@ export async function stats(scope = {}) {
   const rows = await saleModel.aggregate({ branchId: scope.branchId, staffId: scope.staffId })
   const completed = rows.filter((r) => r.status === 'Completed')
   const totalRevenue = completed.reduce((s, r) => s + Number(r.amount || 0), 0)
+
+  // Live conversion rate = Won leads / total leads, scoped to the caller's role.
+  let leadQ = supabase.from('leads').select('status')
+  if (scope.branchId) leadQ = leadQ.eq('branch_id', scope.branchId)
+  if (scope.staffId) leadQ = leadQ.eq('staff_id', scope.staffId)
+  const { data: leadRows } = await leadQ
+  const totalLeads = (leadRows || []).length
+  const wonLeads = (leadRows || []).filter((l) => l.status === 'Won').length
+  const conversionRate = totalLeads ? Math.round((wonLeads / totalLeads) * 1000) / 10 : 0
   const monthPrefix = new Date().toISOString().slice(0, 7)
   const monthlyRevenue = completed
     .filter((r) => String(r.date || '').startsWith(monthPrefix))
@@ -124,6 +135,7 @@ export async function stats(scope = {}) {
     totalRevenue,
     monthlyRevenue,
     avgOrderValue: completed.length ? Math.round(totalRevenue / completed.length) : 0,
+    conversionRate,
     topProducts,
     branchSales,
   }

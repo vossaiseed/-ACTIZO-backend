@@ -123,10 +123,11 @@ export async function assignStaff(id, staffId, staffName = 'staff') {
   await leadModel.addTimeline({ lead_id: id, type: 'assigned', title: 'Staff assigned', description: `Allocated to ${staffName}`, date: today(), by: 'Branch Manager' })
   await leadModel.addActivity({ lead_id: id, action: 'Staff assigned', detail: `Allocated to ${staffName}`, date: today(), by: 'Branch Manager' })
   await notificationService.emit({
-    userId: staffId,
+    branchId: lead.branch_id,
+    staffId,
     type: 'lead',
     title: 'New lead assigned',
-    message: `${lead.name} has been assigned to you.`,
+    message: `${lead.name} has been assigned to ${staffName}.`,
   })
   return updated
 }
@@ -138,9 +139,9 @@ export async function updateStatus(id, status, actor = 'Sales') {
   const updated = await leadModel.update(id, { status, last_activity: new Date().toISOString() })
   await leadModel.addTimeline({ lead_id: id, type: 'status', title: status, description: `Stage moved to ${status}`, date: today(), by: actor })
   if (status === 'Won') {
-    await notificationService.emit({ type: 'won', title: 'Deal won 🎉', message: `${lead.name} was marked as Won.` })
+    await notificationService.emit({ branchId: lead.branch_id, staffId: lead.staff_id, type: 'won', title: 'Deal won 🎉', message: `${lead.name} was marked as Won.` })
   } else if (status === 'Lost') {
-    await notificationService.emit({ userId: lead.staff_id || null, type: 'lead', title: 'Lead lost', message: `${lead.name} was marked as Lost.` })
+    await notificationService.emit({ branchId: lead.branch_id, staffId: lead.staff_id, type: 'lead', title: 'Lead lost', message: `${lead.name} was marked as Lost.` })
   }
   return updated
 }
@@ -160,7 +161,8 @@ export async function addFollowUp(id, payload, actor = 'Sales') {
   await leadModel.addActivity({ lead_id: id, action: `Follow-up (${payload.type})`, detail: payload.remark, date: payload.date || today(), by: payload.by || actor })
   await leadModel.update(id, { next_follow_up: payload.nextDate || null, last_activity: new Date().toISOString() })
   await notificationService.emit({
-    userId: lead.staff_id || null,
+    branchId: lead.branch_id,
+    staffId: lead.staff_id,
     type: 'followup',
     title: 'Follow-up scheduled',
     message: `${payload.type} for ${lead.name}${payload.nextDate ? ` on ${payload.nextDate}` : ''}.`,
