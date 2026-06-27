@@ -47,8 +47,19 @@ async function buildMetrics(staffIds) {
   return m
 }
 
+/**
+ * Real performance score from live signals — replaces the dead stored column:
+ *   unit-target achievement (45%) + lead conversion (25%) + revenue contribution (30%).
+ * Revenue is normalized against the team's top earner so the score self-scales.
+ */
+function scoreOf({ achievement = 0, conversionRate = 0, revenue = 0 }, maxRevenue = 0) {
+  const revenuePoints = maxRevenue > 0 ? (revenue / maxRevenue) * 100 : 0
+  const score = 0.45 * Math.min(achievement, 150) + 0.25 * conversionRate + 0.30 * revenuePoints
+  return Math.max(0, Math.min(100, Math.round(score)))
+}
+
 /** Merge a raw user row + computed metrics into the staff shape the UI uses. */
-function shape(u, metrics, branchName) {
+function shape(u, metrics, branchName, extra = {}) {
   const assignedLeads = metrics?.assignedLeads ?? num(u.assigned_leads)
   const wonLeads = metrics?.wonLeads ?? num(u.won_leads)
   const revenue = metrics?.revenue || num(u.revenue)
@@ -70,12 +81,23 @@ function shape(u, metrics, branchName) {
     conversionRate: assignedLeads ? Math.round((wonLeads / assignedLeads) * 100) : 0,
     revenue,
     target,
-    achievement: target ? Math.round((revenue / target) * 100) : num(u.achievement),
-    incentiveEarned: metrics?.incentiveEarned || num(u.incentive_earned),
-    performanceScore: num(u.performance_score),
-    rating: u.rating != null ? Number(u.rating) : null,
+    // Achievement = live unit-target completion (from the incentive engine) when provided.
+    achievement: extra.achievement != null ? extra.achievement : (target ? Math.round((revenue / target) * 100) : num(u.achievement)),
+    incentiveEarned: extra.incentiveEarned != null ? extra.incentiveEarned : (metrics?.incentiveEarned || num(u.incentive_earned)),
+    // performanceScore + rating are overlaid by the caller via scoreOf (needs team max revenue).
+    performanceScore: extra.performanceScore != null ? extra.performanceScore : 0,
+    rating: extra.rating != null ? extra.rating : 0,
     ...(u.pin ? { pin: u.pin } : {}),
   }
+}
+
+/** Team-wide top revenue (used to normalize the performance score). */
+async function teamMaxRevenue() {
+  const { data } = await userModel.findAll({ role: 'staff', from: 0, to: 999 })
+  const ids = (data || []).map((u) => u.id)
+  if (!ids.length) return 0
+  const m = await buildMetrics(ids)
+  return Math.max(0, ...Object.values(m).map((x) => x.revenue))
 }
 
 export async function list(query, scope = {}) {
@@ -96,11 +118,19 @@ export async function list(query, scope = {}) {
     branchMap(),
     incentiveService.earned(scope), // live incentives, same scope as the list
   ])
-  const incByStaff = Object.fromEntries((incentiveData.items || []).map((i) => [i.staffId, i.amount]))
-  const staff = (data || []).map((u) => ({
-    ...shape(u, metrics[u.id], branches[u.branch_id]),
-    incentiveEarned: incByStaff[u.id] || 0,
-  }))
+  const incByStaff = Object.fromEntries((incentiveData.items || []).map((i) => [i.staffId, i]))
+  const staff = (data || []).map((u) =>
+    shape(u, metrics[u.id], branches[u.branch_id], {
+      achievement: incByStaff[u.id]?.completion ?? 0,
+      incentiveEarned: incByStaff[u.id]?.amount ?? 0,
+    }),
+  )
+  // Second pass: performance score + rating from real signals (needs team max revenue).
+  const maxRev = Math.max(0, ...staff.map((s) => s.revenue))
+  for (const s of staff) {
+    s.performanceScore = scoreOf(s, maxRev)
+    s.rating = Math.round((s.performanceScore / 20) * 10) / 10
+  }
   return { data: staff, meta: buildMeta({ page: q.page, limit: q.limit, total: count }) }
 }
 
@@ -110,11 +140,12 @@ export async function getById(id) {
   // Pull the staff's real related collections so the profile tables aren't empty:
   // their leads, and their live-computed incentive breakdown (same engine as the
   // Incentives page — keeps every staff metric on the SAME staff id).
-  const [metrics, branches, leadsRes, incentiveData] = await Promise.all([
+  const [metrics, branches, leadsRes, incentiveData, maxRev] = await Promise.all([
     buildMetrics([id]),
     branchMap(),
     leadModel.findAll({ staffId: id, from: 0, to: 499 }),
     incentiveService.earned({ branchId: u.branch_id, staffId: id }),
+    teamMaxRevenue(),
   ])
   const assignedLeadsList = (leadsRes.data || []).map((l) => ({
     id: l.ref_code || l.id,
@@ -136,12 +167,13 @@ export async function getById(id) {
     amount: b.amount,
     status: b.status,
   }))
-  return {
-    ...shape(u, metrics[id], branches[u.branch_id]),
+  const base = shape(u, metrics[id], branches[u.branch_id], {
+    achievement: incentiveData.items?.[0]?.completion ?? 0,
     incentiveEarned: incentiveData.summary.totalIncentives,
-    assignedLeadsList,
-    incentives,
-  }
+  })
+  base.performanceScore = scoreOf(base, maxRev)
+  base.rating = Math.round((base.performanceScore / 20) * 10) / 10
+  return { ...base, assignedLeadsList, incentives }
 }
 
 export async function create(payload, actor = {}) {
