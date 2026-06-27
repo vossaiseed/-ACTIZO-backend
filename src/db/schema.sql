@@ -239,6 +239,24 @@ create table if not exists general_targets (
   updated_at    timestamptz default now()
 );
 
+-- Branch Manager → Admin requests to raise an assigned branch target.
+create table if not exists target_requests (
+  id             uuid primary key default gen_random_uuid(),
+  target_id      uuid references general_targets(id) on delete cascade, -- the Branch target
+  branch_id      uuid references branches(id) on delete set null,
+  product_id     uuid references products(id) on delete set null,
+  requested_by   uuid references users(id) on delete set null,          -- the branch manager
+  current_qty    numeric default 0,
+  requested_qty  numeric default 0,
+  message        text,
+  status         text default 'Pending',     -- Pending | Approved | Rejected
+  admin_response text,
+  approved_qty   numeric,
+  resolved_by    uuid references users(id) on delete set null,
+  created_at     timestamptz default now(),
+  updated_at     timestamptz default now()
+);
+
 create table if not exists special_targets (
   id             uuid primary key default gen_random_uuid(),
   name           text not null,
