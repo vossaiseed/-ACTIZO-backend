@@ -9,7 +9,7 @@ import leadRoutes from './lead.routes.js'
 import followupRoutes from './followup.routes.js'
 import saleRoutes from './sale.routes.js'
 import targetRoutes from './target.routes.js'
-import targetRequestRoutes from './targetRequest.routes.js'
+import flashTargetRoutes from './flashTarget.routes.js'
 import incentiveRoutes from './incentive.routes.js'
 import financeRoutes from './finance.routes.js'
 import dashboardRoutes from './dashboard.routes.js'
@@ -40,7 +40,7 @@ router.use('/leads', leadRoutes)
 router.use('/follow-ups', followupRoutes)
 router.use('/sales', saleRoutes)
 router.use('/targets', targetRoutes)
-router.use('/target-requests', targetRequestRoutes)
+router.use('/flash-targets', flashTargetRoutes)
 router.use('/incentives', incentiveRoutes)
 router.use('/finance', financeRoutes)
 router.use('/dashboard', dashboardRoutes)

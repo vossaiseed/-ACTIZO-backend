@@ -64,7 +64,11 @@ export async function create(tab, payload) {
 }
 
 export async function update(tab, id, payload) {
-  await getById(tab, id)
+  const current = await getById(tab, id)
+  // A general target's quantity can only be increased, never reduced once set.
+  if (tab === 'general' && payload.targetQty !== undefined && Number(payload.targetQty) < Number(current.target_qty || 0)) {
+    throw ApiError.badRequest(`A target can only be increased — current is ${current.target_qty}, cannot lower to ${payload.targetQty}.`)
+  }
   return targetModel.update(tab, id, toRow(tab, payload))
 }
 
@@ -164,10 +168,23 @@ export async function allocateBranches(productTargetId, allocations = []) {
   if (total > Number(pt.target_qty || 0)) {
     throw ApiError.badRequest(`Branch allocation total (${total}) exceeds the product target (${pt.target_qty}).`)
   }
+  // No-decrease rule: an already-assigned branch target cannot be removed or lowered.
+  const currentBranchChildren = await targetModel.findGeneral({ scope: 'Branch', parentId: productTargetId })
+  for (const ex of currentBranchChildren) {
+    if (Number(ex.target_qty || 0) > 0 && !valid.find((a) => a.branchId === ex.branch_id)) {
+      throw ApiError.badRequest(`Targets can only be increased — the ${ex.branch?.name || 'branch'} target cannot be removed or reduced.`)
+    }
+  }
   const keep = []
   for (const a of valid) {
     const existing = (await targetModel.findGeneral({ scope: 'Branch', parentId: productTargetId, branchId: a.branchId }))[0]
     if (existing) {
+      // Targets can only be increased, never reduced once assigned.
+      if (Number(a.targetQty) < Number(existing.target_qty || 0)) {
+        throw ApiError.badRequest(
+          `A branch target can only be increased. Current is ${existing.target_qty}; you cannot lower it to ${a.targetQty}.`,
+        )
+      }
       await targetModel.updateGeneral(existing.id, { target_qty: Number(a.targetQty) })
       keep.push(existing.id)
     } else {
@@ -195,10 +212,23 @@ export async function allocateStaff(branchTargetId, allocations = [], scope = {}
   if (total > Number(bt.target_qty || 0)) {
     throw ApiError.badRequest(`Staff allocation total (${total}) exceeds the branch target (${bt.target_qty}).`)
   }
+  // No-decrease rule: an already-assigned staff target cannot be removed or lowered.
+  const currentStaffChildren = await targetModel.findGeneral({ scope: 'Staff', parentId: branchTargetId })
+  for (const ex of currentStaffChildren) {
+    if (Number(ex.target_qty || 0) > 0 && !valid.find((a) => a.staffId === ex.staff_id)) {
+      throw ApiError.badRequest(`Targets can only be increased — the ${ex.staff?.name || 'staff'} target cannot be removed or reduced.`)
+    }
+  }
   const keep = []
   for (const a of valid) {
     const existing = (await targetModel.findGeneral({ scope: 'Staff', parentId: branchTargetId, staffId: a.staffId }))[0]
     if (existing) {
+      // Targets can only be increased, never reduced once assigned.
+      if (Number(a.targetQty) < Number(existing.target_qty || 0)) {
+        throw ApiError.badRequest(
+          `A staff target can only be increased. Current is ${existing.target_qty}; you cannot lower it to ${a.targetQty}.`,
+        )
+      }
       await targetModel.updateGeneral(existing.id, { target_qty: Number(a.targetQty) })
       keep.push(existing.id)
     } else {

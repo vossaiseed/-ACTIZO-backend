@@ -52,6 +52,7 @@ export async function create(payload) {
     category: payload.category || null,
     branch_id: payload.branchId || null,
     staff_id: payload.staffId || null,
+    flash_target_id: payload.flashTargetId || null, // links the sale to a flash campaign
     quantity,
     unit: payload.unit || null,
     unit_price: unitPrice,

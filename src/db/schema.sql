@@ -239,23 +239,51 @@ create table if not exists general_targets (
   updated_at    timestamptz default now()
 );
 
--- Branch Manager → Admin requests to raise an assigned branch target.
-create table if not exists target_requests (
-  id             uuid primary key default gen_random_uuid(),
-  target_id      uuid references general_targets(id) on delete cascade, -- the Branch target
-  branch_id      uuid references branches(id) on delete set null,
-  product_id     uuid references products(id) on delete set null,
-  requested_by   uuid references users(id) on delete set null,          -- the branch manager
-  current_qty    numeric default 0,
-  requested_qty  numeric default 0,
-  message        text,
-  status         text default 'Pending',     -- Pending | Approved | Rejected
-  admin_response text,
-  approved_qty   numeric,
-  resolved_by    uuid references users(id) on delete set null,
-  created_at     timestamptz default now(),
-  updated_at     timestamptz default now()
+-- ===================== Flash Targets (time-boxed campaigns) =====================
+-- Admin campaign -> Branch Manager requests -> Admin approves -> distribute to staff.
+create table if not exists flash_targets (
+  id           uuid primary key default gen_random_uuid(),
+  product_id   uuid references products(id) on delete set null,
+  total_qty    numeric default 0,
+  start_date   date,
+  end_date     date,
+  description  text,
+  status       text default 'Active',          -- Active | Expired | Completed
+  created_by   uuid references users(id) on delete set null,
+  created_at   timestamptz default now(),
+  updated_at   timestamptz default now()
 );
+
+-- Per-branch request + admin approval (one row per branch per flash target).
+create table if not exists flash_branch_targets (
+  id              uuid primary key default gen_random_uuid(),
+  flash_target_id uuid references flash_targets(id) on delete cascade,
+  branch_id       uuid references branches(id) on delete cascade,
+  requested_by    uuid references users(id) on delete set null,
+  requested_qty   numeric default 0,
+  approved_qty    numeric,
+  status          text default 'Pending',       -- Pending | Approved | Partially Approved | Rejected
+  admin_response  text,
+  resolved_by     uuid references users(id) on delete set null,
+  created_at      timestamptz default now(),
+  updated_at      timestamptz default now(),
+  unique (flash_target_id, branch_id)
+);
+
+-- Branch Manager distributes the approved branch quantity across staff.
+create table if not exists flash_staff_targets (
+  id              uuid primary key default gen_random_uuid(),
+  flash_target_id uuid references flash_targets(id) on delete cascade,
+  branch_id       uuid references branches(id) on delete set null,
+  staff_id        uuid references users(id) on delete cascade,
+  qty             numeric default 0,
+  created_at      timestamptz default now(),
+  updated_at      timestamptz default now(),
+  unique (flash_target_id, staff_id)
+);
+
+-- Link a sale to a flash campaign (only flash-linked sales drive flash progress).
+alter table sales add column if not exists flash_target_id uuid references flash_targets(id) on delete set null;
 
 create table if not exists special_targets (
   id             uuid primary key default gen_random_uuid(),
