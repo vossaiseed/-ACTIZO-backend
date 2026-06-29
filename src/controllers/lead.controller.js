@@ -19,7 +19,15 @@ export const getOne = asyncHandler(async (req, res) => {
 })
 
 export const create = asyncHandler(async (req, res) => {
-  const lead = await leadService.create(req.body, req.user?.name || 'System')
+  const payload = { ...req.body }
+  // Admin chooses the branch; managers/staff are bound to their own branch.
+  if (req.user?.role === ROLES.BRANCH_MANAGER) {
+    payload.branchId = req.user.branchId
+  } else if (req.user?.role === ROLES.STAFF) {
+    payload.branchId = req.user.branchId
+    payload.staffId = req.user.id
+  }
+  const lead = await leadService.create(payload, req.user?.name || 'System')
   sendCreated(res, lead, 'Lead created')
 })
 

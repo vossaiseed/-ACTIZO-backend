@@ -65,9 +65,11 @@ export async function getById(id) {
 }
 
 export async function create(payload, actor = 'System') {
-  // Branch is auto-assigned from the customer's location; manual selection is a fallback.
+  // An explicitly selected branch always wins; location auto-routing is the fallback
+  // only when no branch was chosen.
   const resolvedBranch = await resolveBranchFromLocation(payload.location)
-  const branchId = resolvedBranch || payload.branchId || null
+  const branchId = payload.branchId || resolvedBranch || null
+  const autoRouted = !payload.branchId && Boolean(resolvedBranch)
   const lead = await leadModel.create({
     ref_code: refCode(),
     name: payload.name,
@@ -90,7 +92,21 @@ export async function create(payload, actor = 'System') {
   })
   await leadModel.addTimeline({ lead_id: lead.id, type: 'created', title: 'Lead created', description: `Captured via ${payload.source || 'system'}`, date: today(), by: actor })
   if (lead.branch_id) {
-    await leadModel.addTimeline({ lead_id: lead.id, type: 'assigned', title: 'Branch assigned', description: 'Auto-routed by location', date: today(), by: 'System' })
+    await leadModel.addTimeline({
+      lead_id: lead.id,
+      type: 'assigned',
+      title: 'Branch assigned',
+      description: autoRouted ? 'Auto-routed by location' : 'Assigned to selected branch',
+      date: today(),
+      by: 'System',
+    })
+    // Notify the branch's manager(s) + admins that a new lead arrived for the branch.
+    await notificationService.emit({
+      branchId: lead.branch_id,
+      type: 'lead',
+      title: 'New lead added',
+      message: `${lead.name || 'A new lead'} was assigned to your branch${payload.location ? ` (${payload.location})` : ''}.`,
+    })
   }
   return lead
 }

@@ -108,21 +108,25 @@ const withinPeriod = (target, date) => {
   return true
 }
 
-/** Units sold matching a target's product + (branch/staff) scope + period. */
-function achievedFor(target, sales) {
-  return sales.reduce((sum, s) => {
-    if (s.product_id !== target.product_id) return sum
-    if (target.branch_id && s.branch_id !== target.branch_id) return sum
-    if (target.staff_id && s.staff_id !== target.staff_id) return sum
-    if (!withinPeriod(target, s.date)) return sum
-    return sum + Number(s.quantity || 0)
-  }, 0)
+/** Units sold AND number of completed sales matching a target's product + scope + period. */
+function matchSales(target, sales) {
+  let units = 0
+  let count = 0
+  for (const s of sales) {
+    if (s.product_id !== target.product_id) continue
+    if (target.branch_id && s.branch_id !== target.branch_id) continue
+    if (target.staff_id && s.staff_id !== target.staff_id) continue
+    if (!withinPeriod(target, s.date)) continue
+    units += Number(s.quantity || 0)
+    count += 1
+  }
+  return { units, count }
 }
 
 /** Overlay LIVE achievement / completion / status / incentive on a general target. */
 export function withAchievement(target, sales) {
   const targetQty = Number(target.target_qty || 0)
-  const achieved = achievedFor(target, sales)
+  const { units: achieved, count: salesCount } = matchSales(target, sales)
   const completion = targetQty ? Math.round((achieved / targetQty) * 100) : 0
   const rate = Number(target.incentive || 0) // ₹ per extra unit
   const extraQty = Math.max(0, achieved - targetQty)
@@ -130,6 +134,7 @@ export function withAchievement(target, sales) {
   return {
     ...target,
     achieved_qty: achieved,
+    sales_count: salesCount, // number of completed sales recorded against this target
     completion,
     status,
     incentive_extra_qty: extraQty,
