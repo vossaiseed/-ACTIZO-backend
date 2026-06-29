@@ -82,7 +82,9 @@ export async function list(scope = {}) {
     approvedByCampaign[bt.flash_target_id] = (approvedByCampaign[bt.flash_target_id] || 0) + Number(bt.approved_qty || 0)
   }
 
-  const branchTargets = (branchId ? allBranchTargets.filter((b) => b.branch_id === branchId) : allBranchTargets).map((b) => {
+  // Staff don't deal with branch requests; managers see their branch; admin sees all.
+  const scopedBranchTargets = staffId ? [] : branchId ? allBranchTargets.filter((b) => b.branch_id === branchId) : allBranchTargets
+  const branchTargets = scopedBranchTargets.map((b) => {
     const achieved = byBranch[`${b.flash_target_id}:${b.branch_id}`] || 0
     const approved = Number(b.approved_qty || 0)
     return {
@@ -111,7 +113,7 @@ export async function list(scope = {}) {
       }
     })
 
-  // Staff only see campaigns they're allocated to.
+  // Staff see a campaign ONLY when the Branch Manager has assigned it to them.
   let visibleCampaigns = campaigns
   if (staffId) {
     const ids = new Set(staffTargets.map((s) => s.flash_target_id))
@@ -237,6 +239,7 @@ export async function resolveBranchRequest(id, payload, actor = {}) {
         ? `Your flash target request was rejected.${payload.adminResponse ? ` Reason: ${payload.adminResponse}` : ''}`
         : `Your flash target was approved for ${approvedQty} units. You can now distribute it to your staff.`,
   })
+
   return updated
 }
 
@@ -288,7 +291,14 @@ export async function activeForStaff(staffId) {
     model.findCampaigns({ status: 'Active' }),
   ])
   const byId = Object.fromEntries(campaigns.map((c) => [c.id, c]))
+  // Staff can link sales only to flash targets the manager assigned to them.
   return staffTargets
     .filter((s) => byId[s.flash_target_id])
-    .map((s) => ({ id: s.flash_target_id, qty: s.qty, product: byId[s.flash_target_id].product?.name }))
+    .map((s) => ({ id: s.flash_target_id, qty: s.qty, productId: byId[s.flash_target_id]?.product_id, product: byId[s.flash_target_id]?.product?.name }))
+}
+
+/** All active flash campaigns — for Admin/Manager to link a sale (filtered by product on the form). */
+export async function activeCampaigns() {
+  const campaigns = await model.findCampaigns({ status: 'Active' })
+  return campaigns.map((c) => ({ id: c.id, productId: c.product_id, product: c.product?.name }))
 }

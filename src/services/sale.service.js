@@ -44,6 +44,16 @@ export async function create(payload) {
   const finalAmount = Math.max(0, totalAmount - discount)
   const paymentStatus = payload.paymentStatus || 'Paid'
 
+  // A flash link is only valid if the campaign is Active and for the same product.
+  let flashTargetId = payload.flashTargetId || null
+  if (flashTargetId) {
+    const { data: ft } = await supabase
+      .from('flash_targets').select('id, product_id, status').eq('id', flashTargetId).maybeSingle()
+    if (!ft || ft.status !== 'Active' || (payload.productId && ft.product_id !== payload.productId)) {
+      flashTargetId = null
+    }
+  }
+
   const sale = await saleModel.create({
     ref_code: refCode(),
     lead_id: payload.leadId || null,
@@ -52,7 +62,7 @@ export async function create(payload) {
     category: payload.category || null,
     branch_id: payload.branchId || null,
     staff_id: payload.staffId || null,
-    flash_target_id: payload.flashTargetId || null, // links the sale to a flash campaign
+    flash_target_id: flashTargetId, // links the sale to a flash campaign (validated)
     quantity,
     unit: payload.unit || null,
     unit_price: unitPrice,

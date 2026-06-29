@@ -32,3 +32,7 @@ export const distribute = asyncHandler(async (req, res) => {
 export const activeForStaff = asyncHandler(async (req, res) => {
   sendSuccess(res, { data: await service.activeForStaff(req.user.id) })
 })
+
+export const active = asyncHandler(async (_req, res) => {
+  sendSuccess(res, { data: await service.activeCampaigns() })
+})

@@ -10,6 +10,7 @@ router.use(authenticate)
 // Read (role-scoped) — all roles.
 router.get('/', controller.list)
 router.get('/active-for-staff', controller.activeForStaff)
+router.get('/active', controller.active)
 
 // Admin creates a flash campaign.
 router.post('/', authorize(ROLES.ADMIN), controller.create)
