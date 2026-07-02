@@ -13,14 +13,14 @@ export const upcoming = asyncHandler(async (req, res) => {
 })
 
 export const create = asyncHandler(async (req, res) => {
-  sendCreated(res, await followupService.create(req.body, req.user?.name), 'Follow-up created')
+  sendCreated(res, await followupService.create(req.body, req.user?.name, requestScope(req)), 'Follow-up created')
 })
 
 export const update = asyncHandler(async (req, res) => {
-  sendSuccess(res, { data: await followupService.update(req.params.id, req.body), message: 'Follow-up updated' })
+  sendSuccess(res, { data: await followupService.update(req.params.id, req.body, requestScope(req)), message: 'Follow-up updated' })
 })
 
 export const remove = asyncHandler(async (req, res) => {
-  await followupService.remove(req.params.id)
+  await followupService.remove(req.params.id, requestScope(req))
   sendSuccess(res, { message: 'Follow-up deleted' })
 })

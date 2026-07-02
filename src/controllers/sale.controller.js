@@ -14,7 +14,7 @@ export const stats = asyncHandler(async (req, res) => {
 })
 
 export const getOne = asyncHandler(async (req, res) => {
-  sendSuccess(res, { data: await saleService.getById(req.params.id) })
+  sendSuccess(res, { data: await saleService.getById(req.params.id, requestScope(req)) })
 })
 
 export const create = asyncHandler(async (req, res) => {
@@ -33,10 +33,10 @@ export const create = asyncHandler(async (req, res) => {
 })
 
 export const update = asyncHandler(async (req, res) => {
-  sendSuccess(res, { data: await saleService.update(req.params.id, req.body), message: 'Sale updated' })
+  sendSuccess(res, { data: await saleService.update(req.params.id, req.body, requestScope(req)), message: 'Sale updated' })
 })
 
 export const remove = asyncHandler(async (req, res) => {
-  await saleService.remove(req.params.id)
+  await saleService.remove(req.params.id, requestScope(req))
   sendSuccess(res, { message: 'Sale deleted' })
 })

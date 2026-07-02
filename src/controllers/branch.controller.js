@@ -9,11 +9,11 @@ export const list = asyncHandler(async (req, res) => {
 })
 
 export const getOne = asyncHandler(async (req, res) => {
-  sendSuccess(res, { data: await branchService.getById(req.params.id) })
+  sendSuccess(res, { data: await branchService.getById(req.params.id, requestScope(req)) })
 })
 
 export const stats = asyncHandler(async (req, res) => {
-  sendSuccess(res, { data: await branchService.getStats(req.params.id) })
+  sendSuccess(res, { data: await branchService.getStats(req.params.id, requestScope(req)) })
 })
 
 export const create = asyncHandler(async (req, res) => {

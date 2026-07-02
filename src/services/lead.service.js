@@ -3,6 +3,7 @@ import * as followupModel from '../models/followup.model.js'
 import * as branchModel from '../models/branch.model.js'
 import * as notificationService from './notification.service.js'
 import { ApiError } from '../utils/ApiError.js'
+import { assertScopeAccess } from '../middleware/rbac.js'
 import { parseListQuery, buildMeta } from '../utils/pagination.js'
 import { LEAD_STATUSES } from '../config/constants.js'
 
@@ -24,8 +25,11 @@ async function resolveBranchFromLocation(location) {
   const key = String(location).trim().toLowerCase()
   let target = LOCATION_TO_BRANCH[key]
   if (!target) {
-    for (const [alias, city] of Object.entries(LOCATION_TO_BRANCH)) {
-      if (key.includes(alias)) { target = city; break }
+    // Whole-word match, longest alias first, so "kochi"/"cochin" can't win on a
+    // random substring and the most specific location name is chosen.
+    const aliases = Object.keys(LOCATION_TO_BRANCH).sort((a, b) => b.length - a.length)
+    for (const alias of aliases) {
+      if (new RegExp(`\\b${alias}\\b`).test(key)) { target = LOCATION_TO_BRANCH[alias]; break }
     }
   }
   if (!target) return null
@@ -53,9 +57,10 @@ export async function list(query, scope = {}) {
   return { data, meta: buildMeta({ page: q.page, limit: q.limit, total: count }) }
 }
 
-export async function getById(id) {
+export async function getById(id, scope = {}) {
   const lead = await leadModel.findById(id)
   if (!lead) throw ApiError.notFound('Lead not found')
+  assertScopeAccess(scope, { branchId: lead.branch_id, staffId: lead.staff_id })
   const [timeline, followUps, activities] = await Promise.all([
     leadModel.getTimeline(id),
     leadModel.getFollowUps(id),
@@ -111,8 +116,8 @@ export async function create(payload, actor = 'System') {
   return lead
 }
 
-export async function update(id, payload) {
-  await getById(id)
+export async function update(id, payload, scope = {}) {
+  await getById(id, scope)
   const fields = {}
   const map = {
     name: 'name', company: 'company', mobile: 'mobile', email: 'email', location: 'location',
@@ -123,14 +128,15 @@ export async function update(id, payload) {
   return leadModel.update(id, fields)
 }
 
-export async function remove(id) {
-  await getById(id)
+export async function remove(id, scope = {}) {
+  await getById(id, scope)
   return leadModel.remove(id)
 }
 
-export async function assignStaff(id, staffId, staffName = 'staff') {
+export async function assignStaff(id, staffId, staffName = 'staff', scope = {}) {
   const lead = await leadModel.findById(id)
   if (!lead) throw ApiError.notFound('Lead not found')
+  assertScopeAccess(scope, { branchId: lead.branch_id, staffId: lead.staff_id })
   const updated = await leadModel.update(id, {
     staff_id: staffId,
     status: lead.status === 'New Lead' ? 'Assigned' : lead.status,
@@ -148,10 +154,11 @@ export async function assignStaff(id, staffId, staffName = 'staff') {
   return updated
 }
 
-export async function updateStatus(id, status, actor = 'Sales') {
+export async function updateStatus(id, status, actor = 'Sales', scope = {}) {
   if (!LEAD_STATUSES.includes(status)) throw ApiError.badRequest('Invalid lead status')
   const lead = await leadModel.findById(id)
   if (!lead) throw ApiError.notFound('Lead not found')
+  assertScopeAccess(scope, { branchId: lead.branch_id, staffId: lead.staff_id })
   const updated = await leadModel.update(id, { status, last_activity: new Date().toISOString() })
   await leadModel.addTimeline({ lead_id: id, type: 'status', title: status, description: `Stage moved to ${status}`, date: today(), by: actor })
   if (status === 'Won') {
@@ -162,9 +169,10 @@ export async function updateStatus(id, status, actor = 'Sales') {
   return updated
 }
 
-export async function addFollowUp(id, payload, actor = 'Sales') {
+export async function addFollowUp(id, payload, actor = 'Sales', scope = {}) {
   const lead = await leadModel.findById(id)
   if (!lead) throw ApiError.notFound('Lead not found')
+  assertScopeAccess(scope, { branchId: lead.branch_id, staffId: lead.staff_id })
   const followUp = await followupModel.create({
     lead_id: id,
     type: payload.type,
@@ -186,6 +194,6 @@ export async function addFollowUp(id, payload, actor = 'Sales') {
   return followUp
 }
 
-export async function stats() {
-  return leadModel.countByStatus()
+export async function stats(scope = {}) {
+  return leadModel.countByStatus({ branchId: scope.branchId, staffId: scope.staffId })
 }

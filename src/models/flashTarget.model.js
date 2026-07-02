@@ -114,13 +114,16 @@ export async function deleteStaffTargets(flashTargetId, branchId, exceptIds = []
   if (error) throw error
 }
 
-/* ---------------- Achievement (only flash-linked completed sales) ---------------- */
-export async function flashSales() {
+/* ---------------- Achievement source ----------------
+ * ALL completed sales (with product + date) — flash achievement is auto-matched
+ * to campaigns by product + window + approved branch, mirroring general targets.
+ * An explicit flash_target_id (when present) is used only to disambiguate
+ * overlapping same-product campaigns. */
+export async function completedSales() {
   const { data, error } = await supabase
     .from('sales')
-    .select('flash_target_id, branch_id, staff_id, quantity, status')
+    .select('id, flash_target_id, product_id, branch_id, staff_id, quantity, status, date')
     .eq('status', 'Completed')
-    .not('flash_target_id', 'is', null)
   if (error) throw error
   return data || []
 }

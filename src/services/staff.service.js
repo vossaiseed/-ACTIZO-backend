@@ -181,18 +181,18 @@ export async function create(payload, actor = {}) {
   return shape(created, null, null) // pin is carried through by shape()
 }
 
-export async function update(id, payload) {
-  await userService.update(id, payload)
+export async function update(id, payload, actor = {}) {
+  await userService.update(id, payload, actor)
   return getById(id)
 }
 
-export async function setStatus(id, status) {
-  await userService.setStatus(id, status)
+export async function setStatus(id, status, actor = {}) {
+  await userService.setStatus(id, status, actor)
   return getById(id)
 }
 
-export async function resetPin(id) {
-  return userService.resetPin(id) // { pin }
+export async function resetPin(id, actor = {}) {
+  return userService.resetPin(id, actor) // { pin }
 }
 
 export async function remove(id) {

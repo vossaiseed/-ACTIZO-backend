@@ -12,7 +12,7 @@ export const create = asyncHandler(async (req, res) => {
 })
 
 export const markRead = asyncHandler(async (req, res) => {
-  sendSuccess(res, { data: await notificationService.markRead(req.params.id), message: 'Marked as read' })
+  sendSuccess(res, { data: await notificationService.markRead(req.params.id, req.user.id), message: 'Marked as read' })
 })
 
 export const markAllRead = asyncHandler(async (req, res) => {

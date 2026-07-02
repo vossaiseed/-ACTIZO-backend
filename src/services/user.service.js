@@ -79,8 +79,35 @@ export async function create(payload, actor = {}) {
   return { ...created, pin }
 }
 
-export async function update(id, payload) {
-  await getById(id)
+/**
+ * Guard: verify the actor may manage the target user. A Branch Manager can only
+ * touch active sales-staff in their OWN branch — never admins, other managers,
+ * or users in another branch. Admins are unrestricted. Returns the target row.
+ */
+async function assertManageable(id, actor = {}) {
+  const target = await userModel.findPublicById(id)
+  if (!target) throw ApiError.notFound('User not found')
+  if (actor.role === ROLES.BRANCH_MANAGER) {
+    if (target.role !== ROLES.STAFF) {
+      throw ApiError.forbidden('Branch managers can only manage sales staff')
+    }
+    if (target.branch_id !== actor.branchId) {
+      throw ApiError.forbidden('You can only manage staff in your own branch')
+    }
+  }
+  return target
+}
+
+export async function update(id, payload, actor = {}) {
+  const target = await assertManageable(id, actor)
+  // Only an admin may change a user's role — blocks privilege escalation.
+  if (payload.role !== undefined && payload.role !== target.role && actor.role && actor.role !== ROLES.ADMIN) {
+    throw ApiError.forbidden('Only an admin can change a user role')
+  }
+  // A manager cannot move a user to another branch.
+  if (actor.role === ROLES.BRANCH_MANAGER && payload.branchId !== undefined && payload.branchId !== actor.branchId) {
+    throw ApiError.forbidden('You can only assign staff to your own branch')
+  }
   const fields = {}
   const map = {
     name: 'name', email: 'email', phone: 'phone', role: 'role',
@@ -95,14 +122,14 @@ export async function update(id, payload) {
   return userModel.update(id, fields)
 }
 
-export async function setStatus(id, status) {
-  await getById(id)
+export async function setStatus(id, status, actor = {}) {
+  await assertManageable(id, actor)
   if (!['active', 'inactive'].includes(status)) throw ApiError.badRequest('Invalid status')
   return userModel.update(id, { status })
 }
 
-export async function resetPin(id) {
-  await getById(id)
+export async function resetPin(id, actor = {}) {
+  await assertManageable(id, actor)
   const pin = await ensureUniquePin(null, id) // fresh, guaranteed-unique PIN
   await userModel.update(id, { pin_hash: await hashPin(pin), pin })
   return { pin }

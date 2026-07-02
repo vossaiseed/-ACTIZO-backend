@@ -40,4 +40,23 @@ export function requestScope(req) {
   return scope
 }
 
+/**
+ * Enforce that a single record is within the caller's data scope, for detail
+ * (getById) and mutation endpoints — the counterpart to requestScope() used on
+ * lists. Admins (empty scope) pass. Staff (scope.staffId) may only touch their
+ * OWN records; Managers (scope.branchId only) their branch's records.
+ * Pass the record's owner ids as { branchId, staffId }.
+ */
+export function assertScopeAccess(scope = {}, { branchId = null, staffId = null } = {}) {
+  if (scope.staffId) {
+    if (staffId !== scope.staffId) {
+      throw ApiError.forbidden('You can only access your own records')
+    }
+    return
+  }
+  if (scope.branchId && branchId !== scope.branchId) {
+    throw ApiError.forbidden('You can only access records within your branch')
+  }
+}
+
 export default authorize

@@ -1,6 +1,7 @@
 import * as followupModel from '../models/followup.model.js'
 import * as leadModel from '../models/lead.model.js'
 import { ApiError } from '../utils/ApiError.js'
+import { assertScopeAccess } from '../middleware/rbac.js'
 import { parseListQuery, buildMeta } from '../utils/pagination.js'
 
 export async function list(query, scope = {}) {
@@ -24,10 +25,11 @@ export async function upcoming(limit = 8, scope = {}) {
   return followupModel.upcoming(limit, { branchId: scope.branchId, staffId: scope.staffId })
 }
 
-export async function create(payload, actor = 'Sales') {
+export async function create(payload, actor = 'Sales', scope = {}) {
   if (!payload.leadId) throw ApiError.badRequest('leadId is required')
   const lead = await leadModel.findById(payload.leadId)
   if (!lead) throw ApiError.notFound('Lead not found')
+  assertScopeAccess(scope, { branchId: lead.branch_id, staffId: lead.staff_id })
   const followUp = await followupModel.create({
     lead_id: payload.leadId,
     type: payload.type,
@@ -51,13 +53,19 @@ export async function create(payload, actor = 'Sales') {
   return followUp
 }
 
-export async function update(id, payload) {
+export async function update(id, payload, scope = {}) {
+  const existing = await followupModel.findById(id)
+  if (!existing) throw ApiError.notFound('Follow-up not found')
+  assertScopeAccess(scope, { branchId: existing.lead?.branch_id, staffId: existing.lead?.staff_id })
   const fields = {}
   const map = { type: 'type', status: 'status', date: 'date', nextDate: 'next_date', remark: 'remark', by: 'by' }
   for (const [k, col] of Object.entries(map)) if (payload[k] !== undefined) fields[col] = payload[k]
   return followupModel.update(id, fields)
 }
 
-export async function remove(id) {
+export async function remove(id, scope = {}) {
+  const existing = await followupModel.findById(id)
+  if (!existing) throw ApiError.notFound('Follow-up not found')
+  assertScopeAccess(scope, { branchId: existing.lead?.branch_id, staffId: existing.lead?.staff_id })
   return followupModel.remove(id)
 }

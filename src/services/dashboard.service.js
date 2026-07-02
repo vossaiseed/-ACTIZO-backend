@@ -41,7 +41,7 @@ export async function overview(scope = {}) {
   ).slice(0, 6)
 
   // Scoped data queries.
-  let salesQ = supabase.from('sales').select('amount, date, status')
+  let salesQ = supabase.from('sales').select('amount, final_amount, date, status')
   if (branchId) salesQ = salesQ.eq('branch_id', branchId)
   if (staffId) salesQ = salesQ.eq('staff_id', staffId)
   let recentLeadsQ = supabase.from('leads').select('*, branch:branches(name)').order('created_at', { ascending: false }).limit(6)
@@ -68,15 +68,16 @@ export async function overview(scope = {}) {
   ])
 
   const completed = (salesAgg.data || []).filter((s) => s.status === 'Completed')
-  const totalRevenue = completed.reduce((s, r) => s + Number(r.amount || 0), 0)
+  const rev = (r) => Number(r.final_amount ?? r.amount ?? 0) // match Finance/Branch/Staff
+  const totalRevenue = completed.reduce((s, r) => s + rev(r), 0)
   const monthPrefix = new Date().toISOString().slice(0, 7)
-  const monthlyRevenue = completed.filter((r) => String(r.date || '').startsWith(monthPrefix)).reduce((s, r) => s + Number(r.amount || 0), 0)
+  const monthlyRevenue = completed.filter((r) => String(r.date || '').startsWith(monthPrefix)).reduce((s, r) => s + rev(r), 0)
 
   // Real last-8-months revenue trend from actual completed sales (no seeded data).
   const revByMonth = {}
   for (const r of completed) {
     const k = String(r.date || '').slice(0, 7)
-    if (k) revByMonth[k] = (revByMonth[k] || 0) + Number(r.amount || 0)
+    if (k) revByMonth[k] = (revByMonth[k] || 0) + rev(r)
   }
   const trendNow = new Date()
   const revenueTrendData = []

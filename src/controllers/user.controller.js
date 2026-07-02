@@ -21,16 +21,16 @@ export const create = asyncHandler(async (req, res) => {
 })
 
 export const update = asyncHandler(async (req, res) => {
-  sendSuccess(res, { data: await userService.update(req.params.id, req.body), message: 'User updated' })
+  sendSuccess(res, { data: await userService.update(req.params.id, req.body, req.user), message: 'User updated' })
 })
 
 export const setStatus = asyncHandler(async (req, res) => {
-  const data = await userService.setStatus(req.params.id, req.body.status)
+  const data = await userService.setStatus(req.params.id, req.body.status, req.user)
   sendSuccess(res, { data, message: 'User status updated' })
 })
 
 export const resetPin = asyncHandler(async (req, res) => {
-  const data = await userService.resetPin(req.params.id)
+  const data = await userService.resetPin(req.params.id, req.user)
   sendSuccess(res, { data, message: 'PIN reset' })
 })
 

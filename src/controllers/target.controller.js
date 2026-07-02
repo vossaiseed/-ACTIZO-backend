@@ -1,22 +1,17 @@
 import { asyncHandler } from '../utils/asyncHandler.js'
 import { sendSuccess, sendCreated } from '../utils/ApiResponse.js'
-import { branchScope } from '../middleware/rbac.js'
+import { branchScope, requestScope } from '../middleware/rbac.js'
 import { ApiError } from '../utils/ApiError.js'
 import { ROLES } from '../config/constants.js'
 import * as targetService from '../services/target.service.js'
 
 export const summary = asyncHandler(async (req, res) => {
-  const scope = {}
-  const bs = branchScope(req)
-  if (bs) scope.branchId = bs
-  sendSuccess(res, { data: await targetService.summary(scope) })
+  // requestScope carries staffId for Staff so they see only their own targets.
+  sendSuccess(res, { data: await targetService.summary(requestScope(req)) })
 })
 
 export const list = asyncHandler(async (req, res) => {
-  const scope = {}
-  const bs = branchScope(req)
-  if (bs) scope.branchId = bs
-  const { data, meta } = await targetService.list(req.params.tab, req.query, scope)
+  const { data, meta } = await targetService.list(req.params.tab, req.query, requestScope(req))
   sendSuccess(res, { data, meta })
 })
 

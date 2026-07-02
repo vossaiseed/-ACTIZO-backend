@@ -61,7 +61,12 @@ export async function list(query, scope = {}) {
   return { data: enriched, meta: buildMeta({ page: q.page, limit: q.limit, total: count }) }
 }
 
-export async function getById(id) {
+export async function getById(id, scope = {}) {
+  // Staff are restricted to their own branch; Admin & Managers may view any branch
+  // (Branches is a company-wide comparison for them).
+  if (scope.staffId && id !== scope.branchId) {
+    throw ApiError.forbidden('You can only view your own branch')
+  }
   const branch = await branchModel.findById(id)
   if (!branch) throw ApiError.notFound('Branch not found')
   const [stats, sales, units, staffRes, targetRows, achSales] = await Promise.all([
@@ -125,7 +130,10 @@ export async function getById(id) {
   }
 }
 
-export async function getStats(id) {
+export async function getStats(id, scope = {}) {
+  if (scope.staffId && id !== scope.branchId) {
+    throw ApiError.forbidden('You can only view your own branch')
+  }
   const branch = await branchModel.findById(id)
   if (!branch) throw ApiError.notFound('Branch not found')
   return branchModel.stats(id)

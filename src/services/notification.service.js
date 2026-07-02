@@ -58,8 +58,8 @@ export async function emit({ userId = null, branchId = null, staffId = null, typ
   }
 }
 
-export async function markRead(id) {
-  return notificationModel.markRead(id)
+export async function markRead(id, userId) {
+  return notificationModel.markRead(id, userId)
 }
 
 export async function markAllRead(userId) {

@@ -41,8 +41,11 @@ export async function remove(id) {
   return true
 }
 
-export async function countByStatus() {
-  const { data, error } = await supabase.from(TABLE).select('status')
+export async function countByStatus({ branchId, staffId } = {}) {
+  let query = supabase.from(TABLE).select('status')
+  if (branchId) query = query.eq('branch_id', branchId)
+  if (staffId) query = query.eq('staff_id', staffId)
+  const { data, error } = await query
   if (error) throw error
   return (data || []).reduce((acc, r) => ((acc[r.status] = (acc[r.status] || 0) + 1), acc), {})
 }

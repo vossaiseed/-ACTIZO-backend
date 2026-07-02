@@ -32,19 +32,64 @@ async function expireDue(campaigns) {
   return campaigns
 }
 
-/* Build achievement lookups from flash-linked completed sales. */
-function achievementMaps(sales) {
+/* Is a sale's date inside a campaign's [start, end] window? */
+function withinWindow(c, date) {
+  if (!c.start_date && !c.end_date) return true
+  const day = String(date || '').slice(0, 10)
+  if (c.start_date && day < String(c.start_date).slice(0, 10)) return false
+  if (c.end_date && day > String(c.end_date).slice(0, 10)) return false
+  return true
+}
+
+/**
+ * The single flash campaign a completed sale counts toward (or null).
+ * A sale auto-matches a campaign when: same product, sale date within the
+ * campaign window, AND the sale's branch has an approved allocation in that
+ * campaign (achievement is only measured against what was approved).
+ * If several campaigns qualify (overlapping same-product windows), an explicit
+ * flash_target_id link wins; otherwise the most recently-started campaign.
+ */
+function matchCampaign(sale, campaigns, approvedSet) {
+  if (!sale.product_id || !sale.branch_id) return null
+  const candidates = campaigns.filter(
+    (c) =>
+      c.product_id === sale.product_id &&
+      withinWindow(c, sale.date) &&
+      approvedSet.has(`${c.id}:${sale.branch_id}`),
+  )
+  if (candidates.length <= 1) return candidates[0]?.id || null
+  const linked = candidates.find((c) => c.id === sale.flash_target_id)
+  if (linked) return linked.id
+  const sorted = [...candidates].sort((a, b) => {
+    const sa = String(a.start_date || ''), sb = String(b.start_date || '')
+    if (sa !== sb) return sb.localeCompare(sa) // most recent start first
+    return String(b.created_at || '').localeCompare(String(a.created_at || ''))
+  })
+  return sorted[0].id
+}
+
+/**
+ * Build achievement lookups by auto-matching every completed sale to at most one
+ * flash campaign (product + window + approved branch). `approvedSet` holds
+ * `${campaignId}:${branchId}` for branches with an approved allocation.
+ */
+function achievementMaps(sales, campaigns, approvedSet) {
   const byCampaign = {}, byBranch = {}, byStaff = {}
   const cntCampaign = {}, cntBranch = {}, cntStaff = {}
   for (const s of sales) {
+    const cid = matchCampaign(s, campaigns, approvedSet)
+    if (!cid) continue
     const q = Number(s.quantity || 0)
-    byCampaign[s.flash_target_id] = (byCampaign[s.flash_target_id] || 0) + q
-    if (s.branch_id) byBranch[`${s.flash_target_id}:${s.branch_id}`] = (byBranch[`${s.flash_target_id}:${s.branch_id}`] || 0) + q
-    if (s.staff_id) byStaff[`${s.flash_target_id}:${s.staff_id}`] = (byStaff[`${s.flash_target_id}:${s.staff_id}`] || 0) + q
-    // Number of completed sales (count), per scope.
-    cntCampaign[s.flash_target_id] = (cntCampaign[s.flash_target_id] || 0) + 1
-    if (s.branch_id) cntBranch[`${s.flash_target_id}:${s.branch_id}`] = (cntBranch[`${s.flash_target_id}:${s.branch_id}`] || 0) + 1
-    if (s.staff_id) cntStaff[`${s.flash_target_id}:${s.staff_id}`] = (cntStaff[`${s.flash_target_id}:${s.staff_id}`] || 0) + 1
+    byCampaign[cid] = (byCampaign[cid] || 0) + q
+    cntCampaign[cid] = (cntCampaign[cid] || 0) + 1
+    if (s.branch_id) {
+      byBranch[`${cid}:${s.branch_id}`] = (byBranch[`${cid}:${s.branch_id}`] || 0) + q
+      cntBranch[`${cid}:${s.branch_id}`] = (cntBranch[`${cid}:${s.branch_id}`] || 0) + 1
+    }
+    if (s.staff_id) {
+      byStaff[`${cid}:${s.staff_id}`] = (byStaff[`${cid}:${s.staff_id}`] || 0) + q
+      cntStaff[`${cid}:${s.staff_id}`] = (cntStaff[`${cid}:${s.staff_id}`] || 0) + 1
+    }
   }
   return { byCampaign, byBranch, byStaff, cntCampaign, cntBranch, cntStaff }
 }
@@ -72,15 +117,24 @@ export async function list(scope = {}) {
 
   let campaigns = await model.findCampaigns()
   campaigns = await expireDue(campaigns)
-  const sales = await model.flashSales()
-  const { byCampaign, byBranch, byStaff, cntCampaign, cntBranch, cntStaff } = achievementMaps(sales)
+  const sales = await model.completedSales()
 
-  // All branch targets (for totalApproved + scoping).
+  // All branch targets (for totalApproved + scoping). Achievement is only counted
+  // for branches with an approved allocation, so build that lookup first.
   const allBranchTargets = await model.findBranchTargets()
   const approvedByCampaign = {}
+  const approvedSet = new Set() // `${campaignId}:${branchId}` with approved_qty > 0
   for (const bt of allBranchTargets) {
-    approvedByCampaign[bt.flash_target_id] = (approvedByCampaign[bt.flash_target_id] || 0) + Number(bt.approved_qty || 0)
+    const ap = Number(bt.approved_qty || 0)
+    approvedByCampaign[bt.flash_target_id] = (approvedByCampaign[bt.flash_target_id] || 0) + ap
+    if (ap > 0) approvedSet.add(`${bt.flash_target_id}:${bt.branch_id}`)
   }
+
+  const { byCampaign, byBranch, byStaff, cntCampaign, cntBranch, cntStaff } = achievementMaps(
+    sales,
+    campaigns,
+    approvedSet,
+  )
 
   // Staff don't deal with branch requests; managers see their branch; admin sees all.
   const scopedBranchTargets = staffId ? [] : branchId ? allBranchTargets.filter((b) => b.branch_id === branchId) : allBranchTargets

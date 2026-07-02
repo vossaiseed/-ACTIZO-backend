@@ -36,8 +36,9 @@ export async function overview() {
   const expenses = Number(inc.summary.totalIncentives || 0)
   const profit = revenue - expenses
   const profitMargin = revenue ? Math.round((profit / revenue) * 1000) / 10 : 0
+  // Receivables = value genuinely still owed: unpaid sales that were NOT refunded.
   const receivables = sales
-    .filter((s) => s.payment_status && s.payment_status !== 'Paid')
+    .filter((s) => s.status !== 'Refunded' && s.payment_status && s.payment_status !== 'Paid')
     .reduce((s, r) => s + Number(r.final_amount ?? r.amount ?? 0), 0)
   const healthScore = revenue
     ? Math.max(0, Math.min(100, Math.round(profitMargin * 1.5 + 40 - (receivables / revenue) * 20)))

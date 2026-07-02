@@ -26,6 +26,13 @@ export async function findByLead(leadId) {
   return data
 }
 
+/** A single follow-up with its parent lead's owner ids (for scope checks). */
+export async function findById(id) {
+  const { data, error } = await supabase.from(TABLE).select(RELATIONS).eq('id', id).maybeSingle()
+  if (error) throw error
+  return data
+}
+
 export async function create(payload) {
   const { data, error } = await supabase.from(TABLE).insert(payload).select().single()
   if (error) throw error

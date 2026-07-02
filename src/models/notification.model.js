@@ -39,8 +39,11 @@ export async function createMany(rows) {
   return data || []
 }
 
-export async function markRead(id) {
-  const { data, error } = await supabase.from(TABLE).update({ read: true }).eq('id', id).select().single()
+export async function markRead(id, userId) {
+  // Scoped to the owner so a user can never mark/read another user's notification.
+  let q = supabase.from(TABLE).update({ read: true }).eq('id', id)
+  if (userId) q = q.eq('user_id', userId)
+  const { data, error } = await q.select().maybeSingle()
   if (error) throw error
   return data
 }

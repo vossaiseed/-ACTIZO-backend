@@ -44,7 +44,7 @@ export async function remove(id) {
 export async function aggregate({ branchId, staffId } = {}) {
   let query = supabase
     .from(TABLE)
-    .select('amount, status, date, quantity, product:products(name), branch:branches(name)')
+    .select('amount, final_amount, status, date, quantity, product:products(name), branch:branches(name), staff:users(name)')
   if (branchId) query = query.eq('branch_id', branchId)
   if (staffId) query = query.eq('staff_id', staffId)
   const { data, error } = await query
